@@ -5,26 +5,31 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:thesis/main.dart';
+import 'package:water_dashboard/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
+  testWidgets('Dashboard renders key sections and toggles details', (tester) async {
     await tester.pumpWidget(const MyApp());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(find.text('Hydro Monitor'), findsOneWidget);
+    expect(find.text('Overview'), findsOneWidget);
+    expect(find.text('Results'), findsOneWidget);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    // Initial selected should be Water
+    expect(find.text('Water level'), findsOneWidget);
+    expect(find.text('72%'), findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Tap Nutrients
+    await tester.tap(find.text('Nutrients'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nutrients level'), findsOneWidget);
+    expect(find.text('480 ppm'), findsOneWidget);
+
+    // Tap pH
+    await tester.tap(find.text('pH'));
+    await tester.pumpAndSettle();
+    expect(find.text('pH level'), findsOneWidget);
+    expect(find.text('6.5'), findsOneWidget);
   });
 }

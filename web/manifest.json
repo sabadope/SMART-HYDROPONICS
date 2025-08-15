@@ -1,6 +1,6 @@
 {
-    "name": "thesis",
-    "short_name": "thesis",
+    "name": "water_dashboard",
+    "short_name": "water_dashboard",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
