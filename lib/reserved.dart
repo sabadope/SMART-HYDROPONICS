@@ -260,9 +260,6 @@ class _DashboardPageState extends State<DashboardPage> with SingleTickerProvider
   late final Animation<double> _float;
   late final Animation<double> _pulse;
 
-  late AnimationController _shadowController;
-  late Animation<double> _shadowStretch;
-
   MetricConfig configFor(MetricType type) {
     switch (type) {
       case MetricType.water:
@@ -336,26 +333,18 @@ class _DashboardPageState extends State<DashboardPage> with SingleTickerProvider
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      // Shadow with adjustable margins
-                      Container(
-                        margin: const EdgeInsets.only(
-                          top: 160,   // distance from image
-                          left: 0,  // shift shadow right
-                          right: 20, // shift shadow left
-                        ),
-                        child: AnimatedBuilder(
-                          animation: _shadowStretch,
-                          builder: (context, child) {
-                            return SharpOvalShadow(
-                              width: 200 * _shadowStretch.value,
-                              height: 52,
-                              intensity: 1.0,
-                            );
-                          },
+                      // soft drop shadow ellipse under the image
+
+
+                      // new sharp oval gradient shadow (pure Dart)
+                      Positioned(
+                        bottom: -10, // tweak to sit just beneath the image
+                        child: SharpOvalShadow(
+                          width: 200,  // match your lettuce width visually
+                          height: 52,  // slim oval; increase for thicker shadow
+                          intensity: 1.0,
                         ),
                       ),
-
-                      // The lettuce image
                       Image.asset('assets/images/lettuce_una.png'),
                     ],
                   ),
@@ -375,21 +364,11 @@ class _DashboardPageState extends State<DashboardPage> with SingleTickerProvider
       ..repeat(reverse: true);
     _float = Tween<double>(begin: -6, end: 6).animate(CurvedAnimation(parent: _floatController, curve: Curves.easeInOut));
     _pulse = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(parent: _floatController, curve: Curves.easeInOut));
-
-    _shadowController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat(reverse: true);
-
-    _shadowStretch = Tween<double>(begin: 1.0, end: 1.3).animate(
-      CurvedAnimation(parent: _shadowController, curve: Curves.easeInOut),
-    );
   }
 
   @override
   void dispose() {
     _floatController.dispose();
-    _shadowController.dispose();
     super.dispose();
   }
 }
@@ -1178,6 +1157,8 @@ class SharpOvalShadow extends StatelessWidget {
   Widget build(BuildContext context) {
     final double baseDiameter = width;
     final double scaleY = (height / baseDiameter).clamp(0.05, 1.0);
+
+    // Opacity ramp scaled by intensity, clamped to [0,1].
     double _o(double v) => (v * intensity).clamp(0.0, 1.0);
 
     return IgnorePointer(
@@ -1191,10 +1172,10 @@ class SharpOvalShadow extends StatelessWidget {
             gradient: RadialGradient(
               center: const Alignment(0.15, 0.05),
               colors: [
-                Colors.black.withOpacity(_o(0.70)),
+                Colors.black.withOpacity(_o(0.70)), // inner core
                 Colors.black.withOpacity(_o(0.40)),
                 Colors.black.withOpacity(_o(0.12)),
-                Colors.black.withOpacity(0.0),
+                Colors.black.withOpacity(0.0),      // edge
               ],
               stops: const [0.30, 0.60, 0.85, 1.00],
             ),
@@ -1204,3 +1185,4 @@ class SharpOvalShadow extends StatelessWidget {
     );
   }
 }
+

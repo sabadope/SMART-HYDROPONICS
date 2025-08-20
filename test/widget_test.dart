@@ -5,31 +5,30 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:water_dashboard/main.dart';
 
 void main() {
-  testWidgets('Dashboard renders key sections and toggles details', (tester) async {
+  testWidgets('FAB navigates to Plants and bottom app bar switches tabs', (tester) async {
     await tester.pumpWidget(const MyApp());
 
+    // Starts on Home (Dashboard) - check a unique body label
     expect(find.text('Hydro Monitor'), findsOneWidget);
-    expect(find.text('Overview'), findsOneWidget);
-    expect(find.text('Results'), findsOneWidget);
 
-    // Initial selected should be Water
-    expect(find.text('Water level'), findsOneWidget);
-    expect(find.text('72%'), findsOneWidget);
-
-    // Tap Nutrients
-    await tester.tap(find.text('Nutrients'));
+    // Tap the floating Plants button
+    await tester.tap(find.byIcon(Icons.eco));
     await tester.pumpAndSettle();
-    expect(find.text('Nutrients level'), findsOneWidget);
-    expect(find.text('480 ppm'), findsOneWidget);
+    expect(find.text('Your plants overview'), findsOneWidget);
 
-    // Tap pH
-    await tester.tap(find.text('pH'));
+    // Tap Insights icon in bottom app bar
+    await tester.tap(find.byIcon(Icons.bar_chart));
     await tester.pumpAndSettle();
-    expect(find.text('pH level'), findsOneWidget);
-    expect(find.text('6.5'), findsOneWidget);
+    expect(find.text('Analytics & trends'), findsOneWidget);
+
+    // Tap Home icon in bottom app bar
+    await tester.tap(find.byIcon(Icons.home));
+    await tester.pumpAndSettle();
+    expect(find.text('Hydro Monitor'), findsOneWidget);
   });
 }
