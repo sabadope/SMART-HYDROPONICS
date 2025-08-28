@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'pages/plant_center_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -151,9 +152,13 @@ class _RootScaffoldState extends State<RootScaffold> {
                 child: GestureDetector(
                   onTap: () {
                     setState(() {
-                      _selectedIndex = 1;
                       _isFirstTimeUser = false; // User has interacted, no longer first-time
                     });
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const PlantCenterPage(),
+                      ),
+                    );
                   },
                   child: GlassMorphismCTAButton(
                     icon: Icons.eco,
