@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -367,21 +368,70 @@ class GlossyDivider extends StatefulWidget {
 class _GlossyDividerState extends State<GlossyDivider> with SingleTickerProviderStateMixin {
   ui.Image? _holeImage;
   ui.Image? _lettuceImage;
+
   late AnimationController _floatController;
   late Animation<double> _float;
+
+  late AnimationController _waveController;
+  late Animation<double> _wavePhase;
+
+  // Remove bubble controller, use timer instead
+  late Timer _bubbleTimer;
+  double _bubbleTime = 0.0; // continuous time in seconds
 
   @override
   void initState() {
     super.initState();
     _loadHoleImage();
     _loadLettuceImage();
-    _floatController = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat(reverse: true);
-    _float = Tween<double>(begin: -6, end: 6).animate(CurvedAnimation(parent: _floatController, curve: Curves.easeInOut));
+
+    // Float (up/down) loops forever with reverse
+    _floatController = AnimationController(vsync: this, duration: const Duration(seconds: 3))
+      ..repeat(reverse: true);
+    _float = Tween<double>(begin: -6, end: 6)
+        .animate(CurvedAnimation(parent: _floatController, curve: Curves.easeInOut));
+
+    // Waves (phase 0..2π) loop forever
+    _waveController = AnimationController(vsync: this, duration: const Duration(seconds: 4))
+      ..repeat();
+    _wavePhase = Tween<double>(begin: 0.0, end: math.pi * 2)
+        .animate(CurvedAnimation(parent: _waveController, curve: Curves.linear));
+
+    // Bubbles: continuous timer (no duration, no reset)
+    _bubbleTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      if (mounted) {
+        setState(() {
+          _bubbleTime += 0.016; // ~60fps
+        });
+      }
+    });
+  }
+
+  Future<void> _loadHoleImage() async {
+    try {
+      final ByteData data = await rootBundle.load('assets/images/hole.png');
+      final Uint8List bytes = data.buffer.asUint8List();
+      ui.decodeImageFromList(bytes, (ui.Image img) {
+        if (mounted) setState(() => _holeImage = img);
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _loadLettuceImage() async {
+    try {
+      final ByteData data = await rootBundle.load('assets/images/lettuce_una.png');
+      final Uint8List bytes = data.buffer.asUint8List();
+      ui.decodeImageFromList(bytes, (ui.Image img) {
+        if (mounted) setState(() => _lettuceImage = img);
+      });
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     _floatController.dispose();
+    _waveController.dispose();
+    _bubbleTimer.cancel();
     super.dispose();
   }
 
@@ -396,41 +446,11 @@ class _GlossyDividerState extends State<GlossyDivider> with SingleTickerProvider
           holeImage: _holeImage,
           lettuceImage: _lettuceImage,
           float: _float,
+          wave: _wavePhase,
+          bubbleTime: _bubbleTime, // Pass continuous time instead of phase
         ),
       ),
     );
-  }
-
-  Future<void> _loadHoleImage() async {
-    try {
-      final ByteData data = await rootBundle.load('assets/images/hole.png');
-      final Uint8List bytes = data.buffer.asUint8List();
-      ui.decodeImageFromList(bytes, (ui.Image img) {
-        if (mounted) {
-          setState(() {
-            _holeImage = img;
-          });
-        }
-      });
-    } catch (_) {
-      // ignore
-    }
-  }
-
-  Future<void> _loadLettuceImage() async {
-    try {
-      final ByteData data = await rootBundle.load('assets/images/lettuce_pangalawa.png');
-      final Uint8List bytes = data.buffer.asUint8List();
-      ui.decodeImageFromList(bytes, (ui.Image img) {
-        if (mounted) {
-          setState(() {
-            _lettuceImage = img;
-          });
-        }
-      });
-    } catch (_) {
-      // ignore
-    }
   }
 }
 
@@ -440,48 +460,48 @@ class _GlossyDividerPainter extends CustomPainter {
     required this.holeImage,
     required this.lettuceImage,
     required this.float,
-  }) : super(repaint: float);
+    required this.wave,
+    required this.bubbleTime,
+  }) : super(repaint: Listenable.merge([float, wave]));
 
   final double strokeWidth;
   final ui.Image? holeImage;
   final ui.Image? lettuceImage;
   final Animation<double>? float;
+  final Animation<double>? wave;
+  final double bubbleTime;
 
   @override
   void paint(Canvas canvas, Size size) {
     final Rect bounds = Offset.zero & size;
 
-    // Background gradient (continuous, no hole)
+    // Background gradient
     final Paint bgPaint = Paint()
       ..shader = const LinearGradient(
         begin: Alignment.centerLeft,
         end: Alignment.centerRight,
-        colors: [
-          Color(0x80FFFFFF),
-          Color(0x47FFFFFF),
-          Color(0x1AFFFFFF),
-        ],
+        colors: [Color(0x80FFFFFF), Color(0x47FFFFFF), Color(0x1AFFFFFF)],
         stops: [0.0, 0.5, 1.0],
       ).createShader(bounds);
     canvas.drawRect(bounds, bgPaint);
 
-    // Compute center gap for strokes only (top stroke)
+    // Water with submerged bubbles
+    _drawWaterAndBubbles(canvas, size, wave?.value ?? 0.0, bubbleTime);
+
+    // Stroke with center gap
     final double rawGap = size.width * 0.22;
     final double gapWidth = rawGap.clamp(48.0, 180.0);
     final double leftEnd = (size.width - gapWidth) / 2.0;
     final double rightStart = leftEnd + gapWidth;
 
-    // Base solid stroke rectangles (square ends)
     final Paint baseTopRectPaint = Paint()..color = const Color(0xCCFFFFFF);
     final Rect topLeftRect = Rect.fromLTWH(0, 0, leftEnd, strokeWidth);
     final Rect topRightRect = Rect.fromLTWH(rightStart, 0, size.width - rightStart, strokeWidth);
     canvas.drawRect(topLeftRect, baseTopRectPaint);
     canvas.drawRect(topRightRect, baseTopRectPaint);
 
-    // Fixed Y for stroke line
     final double baseY = strokeWidth / 2;
 
-    // Blur stroke layer 1 (soft glow, rounded ends)
     final Paint blurStroke1 = Paint()
       ..color = const Color(0x55FFFFFF)
       ..style = PaintingStyle.stroke
@@ -491,7 +511,6 @@ class _GlossyDividerPainter extends CustomPainter {
     canvas.drawLine(Offset(0, baseY), Offset(leftEnd, baseY), blurStroke1);
     canvas.drawLine(Offset(rightStart, baseY), Offset(size.width, baseY), blurStroke1);
 
-    // Mid solid rounded stroke
     final Paint midRounded = Paint()
       ..color = const Color(0xE6FFFFFF)
       ..style = PaintingStyle.stroke
@@ -500,7 +519,6 @@ class _GlossyDividerPainter extends CustomPainter {
     canvas.drawLine(Offset(0, baseY), Offset(leftEnd, baseY), midRounded);
     canvas.drawLine(Offset(rightStart, baseY), Offset(size.width, baseY), midRounded);
 
-    // Blur stroke layer 2 (inner highlight)
     final Paint blurStroke2 = Paint()
       ..color = const Color(0x88FFFFFF)
       ..style = PaintingStyle.stroke
@@ -510,20 +528,18 @@ class _GlossyDividerPainter extends CustomPainter {
     canvas.drawLine(Offset(0, baseY), Offset(leftEnd, baseY), blurStroke2);
     canvas.drawLine(Offset(rightStart, baseY), Offset(size.width, baseY), blurStroke2);
 
-    // Determine target reacts (hole fixed, lettuce animated)
+    // Images (hole fixed, lettuce floats in front)
     final double desiredWidth = math.min(360.0, size.width * 0.70);
     final double holeAspect = holeImage != null ? (holeImage!.width / holeImage!.height) : 1.0;
     final double drawWidth = desiredWidth;
     final double drawHeight = drawWidth / holeAspect;
 
-    // Hole: fixed at stroke line
     final Rect dstHole = Rect.fromCenter(
       center: Offset(size.width / 2, baseY),
       width: drawWidth,
       height: drawHeight,
     );
 
-    // Lettuce: animated around the stroke line
     final double yFloat = baseY + (float?.value ?? 0.0);
     final Rect dstLettuce = Rect.fromCenter(
       center: Offset(size.width / 2, yFloat),
@@ -531,37 +547,16 @@ class _GlossyDividerPainter extends CustomPainter {
       height: drawHeight,
     );
 
-    // Hole behind (fixed on stroke)
     if (holeImage != null) {
-      final Rect srcH = Rect.fromLTWH(
-        0, 0,
-        holeImage!.width.toDouble(),
-        holeImage!.height.toDouble(),
-      );
-      canvas.drawImageRect(
-        holeImage!,
-        srcH,
-        dstHole, // fixed at baseY
-        Paint()..filterQuality = FilterQuality.high,
-      );
+      final Rect srcH = Rect.fromLTWH(0, 0, holeImage!.width.toDouble(), holeImage!.height.toDouble());
+      canvas.drawImageRect(holeImage!, srcH, dstHole, Paint()..filterQuality = FilterQuality.high);
     }
-
-// Lettuce in front (animated around stroke)
     if (lettuceImage != null) {
-      final Rect srcL = Rect.fromLTWH(
-        0, 0,
-        lettuceImage!.width.toDouble(),
-        lettuceImage!.height.toDouble(),
-      );
-      canvas.drawImageRect(
-        lettuceImage!,
-        srcL,
-        dstLettuce, // at yFloat
-        Paint()..filterQuality = FilterQuality.high,
-      );
+      final Rect srcL = Rect.fromLTWH(0, 0, lettuceImage!.width.toDouble(), lettuceImage!.height.toDouble());
+      canvas.drawImageRect(lettuceImage!, srcL, dstLettuce, Paint()..filterQuality = FilterQuality.high);
     }
 
-    // Cross highlights for glass shine (continuous, subtle)
+    // Gleams/bloom
     final Paint gleam1 = Paint()
       ..shader = const LinearGradient(
         begin: Alignment.topLeft,
@@ -580,7 +575,6 @@ class _GlossyDividerPainter extends CustomPainter {
       ).createShader(bounds);
     canvas.drawRect(bounds, gleam2);
 
-    // Radial top-center bloom (continuous)
     final Paint bloom = Paint()
       ..shader = RadialGradient(
         center: Alignment.topCenter,
@@ -591,8 +585,122 @@ class _GlossyDividerPainter extends CustomPainter {
     canvas.drawRect(bounds, bloom);
   }
 
+  // Water + bubbles + TWO-TONE layers
+  void _drawWaterAndBubbles(Canvas canvas, Size size, double wavePhase, double bubbleTimeSec) {
+    final double baseY = strokeWidth * 1.8;
+
+    Path _buildWave(double amplitude1, double amplitude2, double wavelength1, double wavelength2, double phaseShift) {
+      final double k1 = 2 * math.pi / wavelength1;
+      final double k2 = 2 * math.pi / wavelength2;
+
+      final Path path = Path()..moveTo(0, baseY);
+      for (double x = 0; x <= size.width; x += 2.0) {
+        final double y1 = baseY + amplitude1 * math.sin(k1 * x + wavePhase + phaseShift);
+        final double y2 = baseY + amplitude2 * math.sin(k2 * x + wavePhase + math.pi / 2 + phaseShift);
+        final double ySurface = math.min(y1, y2);
+        path.lineTo(x, ySurface);
+      }
+      path
+        ..lineTo(size.width, size.height)
+        ..lineTo(0, size.height)
+        ..close();
+      return path;
+    }
+
+    // --- MAIN WAVE (light cyan → cyan → light cyan) ---
+    final Path waveMain = _buildWave(6.0, 3.5, size.width * 0.8, size.width * 0.5, 0);
+    final Paint mainPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          const Color(0xFF0077B6).withOpacity(0.7), // deep
+          const Color(0xFF00B4D8).withOpacity(0.75), // cyan
+          const Color(0xFF90E0EF).withOpacity(0.7), // light cyan
+        ],
+        stops: const [0.0, 0.5, 1.0],
+      ).createShader(Rect.fromLTWH(0, baseY, size.width, size.height));
+    canvas.drawPath(waveMain, mainPaint);
+
+    // --- SECONDARY WAVE (deep → cyan → light cyan) ---
+    final Path waveSecondary = _buildWave(8.0, 4.0, size.width * 0.9, size.width * 0.55, math.pi / 2);
+    final Paint secondaryPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          const Color(0xFF00B4D8).withOpacity(0.7), // cyan
+          const Color(0xFF00B4D8).withOpacity(0.7), // cyan
+          const Color(0xFF90E0EF).withOpacity(0.55), // light cyan
+        ],
+        stops: const [0.0, 0.6, 1.0],
+      ).createShader(Rect.fromLTWH(0, baseY, size.width, size.height));
+    canvas.drawPath(waveSecondary, secondaryPaint);
+
+    // Clip with main path for bubbles
+    canvas.save();
+    canvas.clipPath(waveMain);
+
+    final Paint bubblePaint = Paint()..style = PaintingStyle.fill;
+    final Paint highlightPaint = Paint()..color = const Color(0x66FFFFFF);
+
+    const int bubbleCount = 18;
+    for (int i = 0; i < bubbleCount; i++) {
+      final double rColor = _rand01(i, 0.11);
+      final bool isPH = rColor < 0.5;
+      final bool altTone = _rand01(i, 0.12) < 0.5;
+      final Color color = isPH
+          ? (altTone ? const Color(0xFFFFC8DD) : const Color(0xFFFFAFCC))
+          : (altTone ? const Color(0xFFF59E0B) : const Color(0xFFFDE68A));
+
+      final double radius = 4.0 + 5.0 * _rand01(i, 0.21);
+      final double speedPxPerSec = 60.0 + 40.0 * _rand01(i, 0.31);
+      final double offsetPx = _rand01(i, 0.41) * size.width;
+      final double lane = -20.0 * _rand01(i, 0.51) - 3.0;
+
+      final double xBase = (bubbleTimeSec * speedPxPerSec + offsetPx) % (size.width + 100.0) - 50.0;
+
+      if (xBase >= -radius && xBase <= size.width + radius) {
+        final double bob = math.sin((xBase / size.width) * 2 * math.pi + i) * 2.0;
+        final double y = baseY + size.height * 0.4 + lane + bob;
+
+        bubblePaint.color = color.withOpacity(0.60);
+        canvas.drawCircle(Offset(xBase, y), radius, bubblePaint);
+        canvas.drawCircle(Offset(xBase - radius * 0.35, y - radius * 0.35), radius * 0.35, highlightPaint);
+      }
+    }
+
+    canvas.restore();
+  }
+
+  // Helpers
+  double _fract(double x) => x - x.floorToDouble();
+  double _rand01(int i, double salt) {
+    final double v = math.sin((i + 1) * 12.9898 + salt * 78.233) * 43758.5453123;
+    return _fract(v.abs());
+  }
+
   @override
   bool shouldRepaint(covariant _GlossyDividerPainter oldDelegate) =>
-      oldDelegate.holeImage != holeImage || oldDelegate.lettuceImage != lettuceImage || oldDelegate.float != float;
+      oldDelegate.holeImage != holeImage ||
+          oldDelegate.lettuceImage != lettuceImage ||
+          oldDelegate.float != float ||
+          oldDelegate.wave != wave ||
+          oldDelegate.bubbleTime != bubbleTime;
 }
 
+class _WaterBubbleSpec {
+  const _WaterBubbleSpec({
+    required this.color,
+    required this.radius,
+    required this.lane,
+    required this.speedPxPerSec,
+    required this.offsetPx,
+  });
+
+  final Color color;         // pink for pH, orange for nutrients
+  final double radius;       // px
+  final double lane;         // vertical offset around mid-water
+  final double speedPxPerSec;
+  final double offsetPx;     // initial pixel offset
+}
