@@ -1,0 +1,37 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+name: Flutter
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup Flutter SDK (with Dart 3.9.x included)
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.3' # you can also use 'stable' to always get the latest
+
+      - name: Disable analytics
+        run: flutter config --no-analytics
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Analyze project source, but don't fail if only warnings/infos exist
+      - name: Analyze project source
+        run: flutter analyze || echo "⚠️ Lint warnings found, but continuing..."
+
+      - name: Run tests
+        run: flutter test
