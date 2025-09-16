@@ -1,28 +1,82 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'pages/plant_center_page.dart';
+import 'core/theme/app_theme.dart';
+import 'core/utils/preferences_helper.dart';
+import 'core/constants/app_constants.dart';
+import 'config/supabase_config.dart';
+import 'services/auth_service.dart';
+import 'features/plants/plant_screen.dart';
+import 'features/onboarding/onboarding_screen.dart';
+import 'features/auth/screens/login_screen.dart';
+import 'config/routes.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Supabase
+  await SupabaseConfig.initialize();
+
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  bool _hasSeenOnboarding = false;
+  bool _isAuthenticated = false;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAppStatus();
+  }
+
+  Future<void> _checkAppStatus() async {
+    final hasSeenOnboarding = await PreferencesHelper.getHasSeenOnboarding();
+    final isAuthenticated = AuthService.isAuthenticated();
+
+    setState(() {
+      _hasSeenOnboarding = hasSeenOnboarding;
+      _isAuthenticated = isAuthenticated;
+      _isLoading = false;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final ColorScheme colorScheme = ColorScheme.fromSeed(seedColor: const Color(0xFF00B4D8));
+    if (_isLoading) {
+      return const MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      );
+    }
+
+    Widget _getInitialScreen() {
+      if (!_hasSeenOnboarding) {
+        return const OnboardingScreen();
+      } else if (!_isAuthenticated) {
+        return const LoginScreen();
+      } else {
+        return const RootScaffold();
+      }
+    }
+
     return MaterialApp(
-      title: 'Hydro Monitor',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: colorScheme,
-        textTheme: GoogleFonts.interTextTheme(),
-        scaffoldBackgroundColor: colorScheme.surface,
-      ),
-      home: const RootScaffold(),
+      title: AppConstants.appName,
+      theme: AppTheme.lightTheme,
+      home: _getInitialScreen(),
       debugShowCheckedModeBanner: false,
+      routes: AppRoutes.routes,
+      onGenerateRoute: AppRoutes.onGenerateRoute,
     );
   }
 }
@@ -156,7 +210,7 @@ class _RootScaffoldState extends State<RootScaffold> {
                     });
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) => const PlantCenterPage(),
+                        builder: (_) => const PlantScreen(),
                       ),
                     );
                   },
@@ -309,6 +363,77 @@ class _DashboardPageState extends State<DashboardPage> with SingleTickerProvider
     }
   }
 
+  Future<void> _handleLogout(BuildContext context) async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Text(
+          'Logout',
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w700,
+            color: Colors.black87,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to logout? You will need to sign in again to access your account.',
+          style: GoogleFonts.inter(
+            color: Colors.grey[700],
+            fontSize: 14,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: Text(
+              'Logout',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout == true && context.mounted) {
+      try {
+        await AuthService.signOut();
+        // Navigate back to login screen
+        Navigator.of(context).pushReplacementNamed('/login');
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error logging out: ${e.toString()}'),
+              backgroundColor: AppTheme.errorColor,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final MetricConfig selectedConfig = configFor(selected);
@@ -316,11 +441,159 @@ class _DashboardPageState extends State<DashboardPage> with SingleTickerProvider
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(
-          'Hydro Monitor',
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w600,
-          ),
+        toolbarHeight: 84, // Increased height to accommodate full shadow effect
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(left: 8, top: 9, bottom: 9),
+              child: GestureDetector(
+                onTap: () => _handleLogout(context),
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.white.withValues(alpha: 0.95),
+                        Colors.white.withValues(alpha: 0.85),
+                      ],
+                    ),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.4),
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.15),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                        spreadRadius: 2,
+                      ),
+                      BoxShadow(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        blurRadius: 12,
+                        offset: const Offset(-3, -3),
+                        spreadRadius: 1,
+                      ),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 8,
+                        offset: const Offset(2, 2),
+                        spreadRadius: 0,
+                      ),
+                    ],
+                  ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        center: Alignment.topLeft,
+                        radius: 0.8,
+                        colors: [
+                          Colors.white.withValues(alpha: 0.5),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                    child: Transform(
+                      alignment: Alignment.center,
+                      transform: Matrix4.rotationY(3.14159), // Flip horizontally (180 degrees in radians)
+                      child: const Icon(
+                        Icons.logout,
+                        color: Color(0xFFEF4444), // Red color for logout
+                        size: 22,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Hydro Monitor',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 20,
+                ),
+              ),
+            ),
+            Container(
+              margin: const EdgeInsets.only(right: 8, top: 9, bottom: 9),
+              child: GestureDetector(
+                onTap: () {
+                  // TODO: Implement add plant functionality
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Add plant feature coming soon!'),
+                      backgroundColor: Color(0xFF16A34A),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.white.withValues(alpha: 0.95),
+                        Colors.white.withValues(alpha: 0.85),
+                      ],
+                    ),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.4),
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.15),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                        spreadRadius: 2,
+                      ),
+                      BoxShadow(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        blurRadius: 12,
+                        offset: const Offset(-3, -3),
+                        spreadRadius: 1,
+                      ),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 8,
+                        offset: const Offset(2, 2),
+                        spreadRadius: 0,
+                      ),
+                    ],
+                  ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        center: Alignment.topLeft,
+                        radius: 0.8,
+                        colors: [
+                          Colors.white.withValues(alpha: 0.5),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.add,
+                      color: Color(0xFF3B82F6), // Blue color
+                      size: 22,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
         centerTitle: true,
         backgroundColor: Colors.transparent,
@@ -734,7 +1007,8 @@ class PlantsPage extends StatelessWidget {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('Plants', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+        toolbarHeight: 80, // Consistent height with dashboard
+        title: Text('Plants', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 20)),
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
@@ -783,7 +1057,8 @@ class InsightsPage extends StatelessWidget {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('Insights', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+        toolbarHeight: 80, // Consistent height with dashboard
+        title: Text('Insights', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 20)),
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
