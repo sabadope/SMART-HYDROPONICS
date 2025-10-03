@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/admin_service.dart';
 import '../widgets/auth_text_field.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -20,6 +21,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  String _selectedRole = 'user'; // Default to user
 
   @override
   void dispose() {
@@ -31,29 +33,65 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _handleRegister() async {
+    print('🔍 DEBUG: Starting form validation...');
     if (!_formKey.currentState!.validate()) {
       print('❌ Form validation failed');
       return;
     }
 
     print('🚀 Starting registration process...');
-    print('📧 Email: ${_emailController.text.trim()}');
-    print('👤 Name: ${_fullNameController.text.trim()}');
-    print('🔒 Password: [PROTECTED]');
-    print('🔒 Confirm Password: [PROTECTED]');
+    final email = _emailController.text.trim();
+    final fullName = _fullNameController.text.trim();
+    final password = _passwordController.text;
+    final confirmPassword = _confirmPasswordController.text;
+    final selectedRole = _selectedRole;
+
+    print('📧 Email: $email');
+    print('👤 Name: $fullName');
+    print('🔒 Password length: ${password.length}');
+    print('🔒 Confirm Password length: ${confirmPassword.length}');
+    print('👥 Selected Role: $selectedRole');
 
     setState(() => _isLoading = true);
 
     try {
+      // Check if this is an admin request - either by email domain or role selection
+      final isAdminRequest = email.endsWith('@admin.com') || selectedRole == 'admin';
+
+      // Check if this could be the first admin (no approved admins exist yet)
+      final hasAnyAdmins = await AdminService.hasAnyApprovedAdmins();
+      final isFirstAdmin = !hasAnyAdmins && isAdminRequest;
+
+      // If first admin, auto-approve; otherwise follow normal approval process
+      final finalRole = isFirstAdmin ? 'admin' : (isAdminRequest ? 'pending_admin' : selectedRole);
+
+      print('🔍 DEBUG: isAdminRequest = $isAdminRequest');
+      print('🔍 DEBUG: finalRole = $finalRole');
+      print('🔍 DEBUG: isFirstAdmin = $isFirstAdmin');
+
+      print('📡 Calling AuthService.signUp...');
       final response = await AuthService.signUp(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-        fullName: _fullNameController.text.trim(),
-        confirmPassword: _confirmPasswordController.text, // Pass confirm password
+        email: email,
+        password: password,
+        fullName: fullName,
+        confirmPassword: confirmPassword,
+        role: finalRole,
+        isAdminRequest: isAdminRequest && !isFirstAdmin, // Don't create request for first admin
       );
 
-      print('✅ Registration response: ${response.user != null ? 'User created' : 'No user'}');
-      print('📋 User metadata: ${response.user?.userMetadata}');
+      // If this is the first admin, auto-approve them
+      if (isFirstAdmin && response.user != null) {
+        await AdminService.addApprovedAdmin(response.user!.id, email);
+        print('👑 First admin auto-approved: ${response.user!.id}');
+      }
+
+      print('✅ Registration response received');
+      print('📋 Response user: ${response.user != null ? 'EXISTS' : 'NULL'}');
+      if (response.user != null) {
+        print('🆔 User ID: ${response.user!.id}');
+        print('📧 User Email: ${response.user!.email}');
+        print('📋 User metadata: ${response.user!.userMetadata}');
+      }
 
       if (response.user != null && mounted) {
         print('🎉 Registration successful! User ID: ${response.user!.id}');
@@ -62,6 +100,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         final isDevelopmentMode = response.user!.id.startsWith('mock_user_');
 
         if (isDevelopmentMode) {
+          print('🧪 Development mode detected');
           // Show development mode success message
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -71,12 +110,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
           );
         } else {
+          print('🏭 Production mode - showing success message');
           // Show production mode success message
+          final successMessage = isFirstAdmin
+              ? '🎉 Welcome, First Administrator! You are now the system administrator.\nYour account has been automatically approved.'
+              : '🎉 Account created successfully! Welcome to Hydro Monitor!\nYour data is stored securely in our database.';
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('🎉 Account created successfully! Welcome to Hydro Monitor!\nYour data is stored securely in our database.'),
-              backgroundColor: AppTheme.successColor,
-              duration: const Duration(seconds: 5),
+              content: Text(successMessage),
+              backgroundColor: isFirstAdmin ? Colors.purple : AppTheme.successColor,
+              duration: const Duration(seconds: 6),
             ),
           );
         }
@@ -84,6 +128,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         // Navigate to login screen after successful registration
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
+            print('🧭 Navigating to login screen...');
             Navigator.of(context).pushReplacementNamed('/login', arguments: {'fromRegistration': true});
           }
         });
@@ -92,11 +137,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
     } catch (e) {
       print('💥 Registration failed with error: $e');
+      print('🔍 Error type: ${e.runtimeType}');
+      print('📝 Error stack trace: ${e.toString()}');
+
+      // Try to extract more specific error information
+      final errorString = e.toString().toLowerCase();
+      if (errorString.contains('network')) {
+        print('🌐 Network-related error detected');
+      } else if (errorString.contains('user already registered')) {
+        print('👤 User already exists error');
+      } else if (errorString.contains('password')) {
+        print('🔒 Password-related error');
+      } else if (errorString.contains('email')) {
+        print('📧 Email-related error');
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Registration failed: ${e.toString()}'),
             backgroundColor: AppTheme.errorColor,
+            duration: const Duration(seconds: 8),
           ),
         );
       }
@@ -268,6 +329,103 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       if (value != _passwordController.text) {
                         return 'Passwords do not match';
                       }
+                      return null;
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Role Selection - Dropdown (Admin requests @admin.com emails)
+                  DropdownButtonFormField<String>(
+                    value: _selectedRole,
+                    decoration: InputDecoration(
+                      labelText: 'Account Type',
+                      labelStyle: GoogleFonts.inter(
+                        color: Colors.grey[700],
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      hintText: 'Select account type',
+                      hintStyle: GoogleFonts.inter(
+                        color: Colors.grey[400],
+                      ),
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.9),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: Colors.grey[300]!,
+                          width: 1,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: AppTheme.primaryColor,
+                          width: 2,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.account_circle,
+                        color: Colors.grey[600],
+                        size: 24,
+                      ),
+                    ),
+                    style: GoogleFonts.inter(
+                      color: Colors.black87,
+                      fontSize: 16,
+                    ),
+                    dropdownColor: Colors.white,
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'user',
+                        child: Row(
+                          children: [
+                            Icon(Icons.person, color: Colors.green, size: 20),
+                            SizedBox(width: 8),
+                            Text('User - Plant Care Access'),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'admin',
+                        child: Row(
+                          children: [
+                            Icon(Icons.admin_panel_settings, color: Colors.red, size: 20),
+                            SizedBox(width: 8),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Admin - System Management'),
+                                Text(
+                                  'Requires admin approval to activate',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() => _selectedRole = value!);
+                    },
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please select an account type';
+                      }
+                      // Note: @admin.com emails are automatically treated as admin requests
                       return null;
                     },
                   ),

@@ -4,6 +4,7 @@ import '../core/utils/preferences_helper.dart';
 import '../core/utils/password_hash.dart';
 import '../core/constants/app_constants.dart';
 import '../shared/models/user_model.dart';
+import 'admin_service.dart';
 
 class AuthService {
   static final SupabaseClient _client = SupabaseConfig.client;
@@ -17,22 +18,22 @@ class AuthService {
     required String password,
     required String fullName,
     String? confirmPassword,
+    required String role, // Add role parameter
+    bool isAdminRequest = false, // Flag for admin approval requests
   }) async {
     print('🔄 Starting registration for: $email');
-    print('🌐 Supabase URL: https://ihscuhuksaixfjmmttqa.supabase.co');
-    print('🔑 Using anon key: ${AppConstants.supabaseAnonKey.substring(0, 20)}...');
+    print('👤 Full Name: $fullName');
+    print('👥 Role: $role');
+    print('👑 Is Admin Request: $isAdminRequest');
 
     if (_isDevelopmentMode) {
-      // Mock successful registration for development
       print('🧪 Development mode: Simulating registration...');
       await Future.delayed(const Duration(seconds: 2));
       await PreferencesHelper.setUserToken('mock_token_${DateTime.now().millisecondsSinceEpoch}');
-      // Hash passwords for development mode too
       final hashedPassword = PasswordHash.hashPassword(password);
       final hashedConfirmPassword = PasswordHash.hashPassword(confirmPassword ?? password);
-      await PreferencesHelper.setUserData('{"email": "$email", "user_metadata": {"full_name": "$fullName", "password": "$hashedPassword", "confirm_password": "$hashedConfirmPassword"}}');
+      await PreferencesHelper.setUserData('{"email": "$email", "user_metadata": {"full_name": "$fullName", "role": "$role", "password": "$hashedPassword", "confirm_password": "$hashedConfirmPassword"}}');
 
-      // Return a mock response - simplified for development
       print('✅ Development mode: Registration successful (mock)');
       return AuthResponse(
         user: User(
@@ -40,6 +41,7 @@ class AuthService {
           email: email,
           userMetadata: {
             'full_name': fullName,
+            'role': role,
             'password': password,
             'confirm_password': confirmPassword ?? password
           },
@@ -48,107 +50,55 @@ class AuthService {
           aud: 'authenticated',
           role: 'authenticated',
         ),
-        session: null, // No session in mock mode
+        session: null,
       );
     }
 
     try {
-      print('📡 Testing Supabase connection...');
+      print('🔐 Calling Supabase auth.signUp...');
 
-      // First, let's test if we can reach Supabase at all
-      try {
-        final testResponse = await _client.from('user_profiles').select('count').limit(1);
-        print('✅ Supabase connection test successful');
-      } catch (connectionError) {
-        print('⚠️ Supabase connection test failed: $connectionError');
-        // Continue with signup attempt anyway
-      }
-
-      print('📡 Sending registration request to Supabase...');
-      print('📋 Registration data:');
-      print('   - Email: $email');
-      print('   - Full Name: $fullName');
-      print('   - Password: [PROTECTED]');
-      print('   - Confirm Password: [PROTECTED]');
-
-      // Hash passwords for security before storing in user metadata
-      final hashedPassword = PasswordHash.hashPassword(password);
-      final hashedConfirmPassword = PasswordHash.hashPassword(confirmPassword ?? password);
-
-      // Include ALL registration form data in user metadata (with hashed passwords)
+      // Simple user metadata - just store role for now
       final userMetadata = {
         'full_name': fullName,
-        'password': hashedPassword, // SHA-256 hashed password
-        'confirm_password': hashedConfirmPassword, // SHA-256 hashed confirm password
-        'original_password': password, // Keep original for Supabase auth (will be removed after successful registration)
-        'original_confirm_password': confirmPassword ?? password, // Keep original for validation
+        'role': role,
       };
 
       final response = await _client.auth.signUp(
         email: email,
         password: password,
-        data: userMetadata, // Pass ALL form data to Supabase
+        data: userMetadata,
       );
 
-      print('✅ Registration response received: ${response.user != null ? 'Success' : 'Failed'}');
-      print('📋 Response details: User ID: ${response.user?.id}, Email: ${response.user?.email}');
-      print('📋 User metadata: ${response.user?.userMetadata}');
+      print('✅ Registration response: ${response.user != null ? 'SUCCESS' : 'FAILED'}');
 
       if (response.user != null) {
-        print('💾 Saving user data...');
+        print('🆔 User ID: ${response.user!.id}');
         await PreferencesHelper.setUserToken(response.session?.accessToken ?? '');
         await PreferencesHelper.setUserData(response.user!.toJson().toString());
-        print('✅ User data saved successfully');
+
+        // Note: User profile creation skipped - using user metadata only
+        // Admin approval system works with local storage
+
+        // Handle admin requests with local storage
+        if (isAdminRequest) {
+          await AdminService.createAdminRequest(
+            userId: response.user!.id,
+            email: email,
+            fullName: fullName,
+          );
+        }
+
+        print('🎉 Registration completed successfully!');
       }
 
       return response;
     } catch (e) {
       print('❌ Registration error: $e');
-      print('🔍 Error type: ${e.runtimeType}');
-      print('📝 Error toString: ${e.toString()}');
-      print('📋 Error details: ${e}');
-
-      // Provide more user-friendly error messages
-      final errorString = e.toString().toLowerCase();
-
-      if (errorString.contains('failed host lookup') ||
-          errorString.contains('no address associated with hostname') ||
-          errorString.contains('network') ||
-          errorString.contains('connection') ||
-          errorString.contains('socket') ||
-          errorString.contains('timeout')) {
-        print('🌐 Network-related error detected');
-        print('💡 This usually means Flutter cannot connect to Supabase');
-        print('🔧 Check: 1) Internet connection 2) Network permissions 3) Supabase project status');
-        throw Exception('Network connection failed. Please check your internet connection and try again.');
-      } else if (errorString.contains('invalid login credentials')) {
-        throw Exception('Invalid email or password. Please try again.');
-      } else if (errorString.contains('user already registered') ||
-                  errorString.contains('already exists')) {
-        throw Exception('An account with this email already exists. Please try logging in instead.');
-      } else if (errorString.contains('weak password') ||
-                  errorString.contains('password')) {
-        throw Exception('Password is too weak. Please use at least 6 characters with letters and numbers.');
-      } else if (errorString.contains('invalid email') ||
-                  errorString.contains('email')) {
-        throw Exception('Please enter a valid email address.');
-      } else if (errorString.contains('ssl') ||
-                  errorString.contains('certificate') ||
-                  errorString.contains('handshake')) {
-        print('🔒 SSL/Certificate error detected');
-        print('💡 This means Flutter cannot establish secure connection to Supabase');
-        print('🔧 Check: 1) Network security config 2) SSL settings 3) Platform permissions');
-        throw Exception('Connection security error. Please try again or contact support.');
-      } else {
-        print('❓ Unknown error type, showing generic message');
-        print('🔍 Full error analysis:');
-        print('   - Contains "failed": ${errorString.contains('failed')}');
-        print('   - Contains "error": ${errorString.contains('error')}');
-        print('   - Contains "exception": ${errorString.contains('exception')}');
-        throw Exception('Registration failed. Please try again or contact support if the problem persists.');
-      }
+      throw Exception('Registration failed: ${e.toString()}');
     }
   }
+
+
 
   // Sign in with email and password
   static Future<AuthResponse> signIn({
@@ -234,6 +184,27 @@ class AuthService {
   // Check if user is authenticated
   static bool isAuthenticated() {
     return SupabaseConfig.currentUser != null;
+  }
+
+  // Get current user role from user metadata
+  static Future<String?> getCurrentUserRole() async {
+    final user = SupabaseConfig.currentUser;
+    if (user == null) {
+      print('No current user found');
+      return null;
+    }
+
+    // Get role from user metadata (stored during registration)
+    final role = user.userMetadata?['role'] as String?;
+    print('User role from metadata: $role');
+
+    return role ?? 'user'; // Default to user if no role found
+  }
+
+  // Get current user role synchronously (from cache/metadata)
+  static String? getCurrentUserRoleSync() {
+    final user = SupabaseConfig.currentUser;
+    return user?.userMetadata?['role'] as String?;
   }
 
   // Reset password
