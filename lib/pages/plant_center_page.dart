@@ -649,7 +649,7 @@ class _GlossyDividerPainter extends CustomPainter {
       final double offsetPx = _rand01(i, 0.41) * size.width;
       final double lane = -20.0 * _rand01(i, 0.51) - 3.0;
 
-      final double xBase = (bubbleTimeSec * speedPxPerSec + offsetPx) % (size.width + 100.0) - 50.0;
+      final double xBase = MetricUtils.calculateBubblePosition(bubbleTimeSec, speedPxPerSec, offsetPx, size.width);
 
       if (xBase >= -radius && xBase <= size.width + radius) {
         final double bob = math.sin((xBase / size.width) * 2 * math.pi + i) * 2.0;
@@ -665,11 +665,8 @@ class _GlossyDividerPainter extends CustomPainter {
   }
 
   // Helpers
-  double _fract(double x) => x - x.floorToDouble();
-  double _rand01(int i, double salt) {
-    final double v = math.sin((i + 1) * 12.9898 + salt * 78.233) * 43758.5453123;
-    return _fract(v.abs());
-  }
+  double _fract(double x) => MetricUtils.fract(x);
+  double _rand01(int i, double salt) => MetricUtils.rand01(i, salt);
 
   @override
   bool shouldRepaint(covariant _GlossyDividerPainter oldDelegate) =>

@@ -1,5 +1,6 @@
 // Metrics available in the dashboard
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 
 enum MetricType { water, nutrients, ph }
 
@@ -84,6 +85,49 @@ class MetricUtils {
   }
 
   static double calculateShadowOpacity(double value, double intensity) {
+    return (value * intensity).clamp(0.0, 1.0);
+  }
+
+  // Math utilities for animations and effects
+  static double fract(double x) => x - x.floorToDouble();
+
+  static double rand01(int i, double salt) {
+    final double v = math.sin((i + 1) * 12.9898 + salt * 78.233) * 43758.5453123;
+    return fract(v.abs());
+  }
+
+  // Wave calculation utilities
+  static double calculateWaveAmplitude(double baseAmplitude, double variation, int index, double salt) {
+    return baseAmplitude + variation * rand01(index, salt);
+  }
+
+  static double calculateBubblePosition(double time, double speed, double offset, double size) {
+    return (time * speed + offset) % (size + 100.0) - 50.0;
+  }
+
+  // Wave calculation utilities
+  static double calculateWaveNumber(double wavelength) {
+    return 2 * math.pi / wavelength;
+  }
+
+  static double calculateWaveY(double baseY, double amplitude, double waveNumber, double x, double phase) {
+    return baseY + amplitude * math.sin(waveNumber * x + phase);
+  }
+
+  static double calculateCombinedWaveY(double baseY, double amplitude1, double amplitude2,
+      double waveNumber1, double waveNumber2, double x, double phase1, double phase2) {
+    final y1 = calculateWaveY(baseY, amplitude1, waveNumber1, x, phase1);
+    final y2 = calculateWaveY(baseY, amplitude2, waveNumber2, x, phase2);
+    return math.min(y1, y2);
+  }
+
+  // Shadow scaling utilities
+  static double calculateShadowScaleY(double height, double baseDiameter) {
+    final scaleY = (height / baseDiameter).clamp(0.05, 1.0);
+    return scaleY;
+  }
+
+  static double calculateOpacityValue(double value, double intensity) {
     return (value * intensity).clamp(0.0, 1.0);
   }
 }

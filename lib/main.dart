@@ -1124,7 +1124,7 @@ class SharpOvalShadow extends StatelessWidget {
   Widget build(BuildContext context) {
     final double baseDiameter = width;
     final double scaleY = (height / baseDiameter).clamp(0.05, 1.0);
-    double _o(double v) => MetricUtils.calculateShadowOpacity(v, intensity);
+    double _o(double v) => MetricUtils.calculateOpacityValue(v, intensity);
 
     return IgnorePointer(
       child: Transform.scale(
