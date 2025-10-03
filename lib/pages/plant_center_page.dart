@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart' show rootBundle;
 import 'dart:typed_data';
+import '../utils/metric_utils.dart';
 
 class PlantCenterPage extends StatelessWidget {
   const PlantCenterPage({super.key});
@@ -151,17 +152,7 @@ class _InfoSquare extends StatelessWidget {
   final double progress; // 0..1
 
   Color _statusToColor(BuildContext context) {
-    final String label = statusLabel.toLowerCase().trim();
-    if (label.contains('poor') || label.contains('critical') || label.contains('low')) {
-      return const Color(0xFFEF4444); // red
-    }
-    if (label.contains('warn') || label.contains('caution') || label.contains('medium')) {
-      return const Color(0xFFF59E0B); // yellow/amber
-    }
-    if (label.contains('excellent') || label.contains('normal') || label.contains('good') || label.contains('optimal') || label.contains('ok')) {
-      return const Color(0xFF16A34A); // green
-    }
-    return const Color(0xFF16A34A);
+    return MetricUtils.statusToColor(statusLabel);
   }
 
   @override
