@@ -8,7 +8,7 @@ void main() {
       await tester.pumpWidget(const MaterialApp(home: PlantCenterPage()));
 
       // Should have 4 info squares
-      expect(find.text('Plant Health'), findsNothing);
+      expect(find.text('Plant Health'), findsOneWidget);
       expect(find.text('Water Level'), findsOneWidget);
       expect(find.text('pH Level'), findsOneWidget);
       expect(find.text('Nutrients Level'), findsOneWidget);
@@ -151,4 +151,5 @@ void main() {
       expect(find.byType(PlantCenterPage), findsNothing);
     });
   });
+
 }
